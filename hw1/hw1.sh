@@ -7,34 +7,36 @@ line_count=0
 body_count=0
 csvline=""
 whole_body=""
-count=-1
-rm ebook.csv ebook-sorted.csv tokens.csv token_counts.csv tokens-sorted.csv
+touch $filename
+count=$(grep "Title:" $filename  | wc -l)
+rm ebook.csv ebook-sorted.csv tokens.csv token_counts.csv tokens-sorted.csv name_counts.csv
 echo "title,author,release_date,ebook_id,language,body" > ebook.csv 
-declare -a expected_values=("Title" "Author" "Release Date" "Language")
-#[[ $line == "Title"* ]] && echo "$line starts with Title"
-grep  "^Title:\|^Author:\|^Language:\|^Release Date:" $filename | sed '/^[\r\n]*$/d'|  tr -d '\r' |  while read -r line; do     
-    #echo $line;     
-    if [[ $line == "Title"* ]]; then         
-         story=$(cat $filename | awk -v "nth=$body_count"  '/^\*\*\* START OF THE PROJECT GUTENBERG/,/^\*\*\* END OF THE PROJECT GUTENBERG/{if(++m==1)n++;if(n==nth)print;if(/^\*\*\* END OF THE PROJECT GUTENBERG/)m=0}'| sed '1d; $d' | sed "s/\"/\"\"/g" )
-        echo "$story" | awk '{print tolower($0)}' | tr -cs 'a-zA-Z' '\n' | sed "s|^|${bodyid}|" >> tokens.csv
-        echo "$story"  | sort >> ebook-sorted.csv
-        csvline="$csvline, $story"
-        echo "$csvline" >> ebook.csv
-        body_count=$((body_count + 1))
-        csvline=$(echo $line | cut -d ':' -f 2 | sed -e 's/^[ \t]*//' | sed -e 's/^[ \t]*//')","
-        count=0;     
-    elif [[ $line == "Release Date"* ]]; then
-        csvline+="\""$(echo $line | cut -d '[' -f 1| cut -d ':' -f 2 | sed -e 's/^[ \t]*//')"\""","
-        bodyid=$(echo $line | sed 's/.*\[\([^]]*\)\].*/\1/g'| cut -d " " -f 2 |cut -d '#' -f 2)","
-        csvline+="\""$(echo $line | sed 's/.*\[\([^]]*\)\].*/\1/g'| cut -d " " -f 2 |cut -d '#' -f 2 | sed -e 's/^[ \t]*//')"\","
-     else
-         csvline+=$(echo $line | cut -d ':' -f 2 | cut -d '#' -f 2 | sed -e 's/^[ \t]*//')","
-     fi;     
-     previous_line=$line;     
-     let "count=count+1"; 
-     let "line_count=line_count+1"; 
+echo "ebook_id,token" > tokens.csv
+echo "token,count" > tokens.csv
+echo "token,count" > name_counts.csv
+i=1
+while [ $i -lt $count ]
+do
+    chunk=$(grep  "^Title:\|^Author:\|^Language:\|^Release Date:\|^\*\*\* START OF THE PROJECT GUTENBERG" $filename | awk -v "nth=$i"  '/^Title:/,/^\*\*\* START OF THE PROJECT GUTENBERG/{if(++m==1)n++;if(n==nth)print;if(/^\*\*\* START OF THE PROJECT GUTENBERG/)m=0}' )  
+    #echo "$chunk" 
+    title=$(echo "$chunk" | grep "Title:" | tr -d '\r\n' | cut -d ':' -f 2 | sed -e 's/^[ \t]*//')","
+    author=$(echo "$chunk" | grep "Author:" | tr -d '\r\n' | cut -d ':' -f 2 | sed -e 's/^[ \t]*//')","
+    release_date="\""$(echo "$chunk" | grep "Release Date:" | tr -d '\r\n' | cut -d '[' -f 1| cut -d ':' -f 2 | sed -e 's/^[ \t]*//'| sed -e 's/^[ \t]*//'| sed 's/ $//')"\","
+    bookid=$(echo "$chunk" | grep "Release Date:" | tr -d '\r\n' | sed 's/.*\[\([^]]*\)\].*/\1/g'| cut -d " " -f 2 |cut -d '#' -f 2 | sed -e 's/^[ \t]*//')","
+    language=$(echo "$chunk" | grep "Language:" | tr -d '\r\n' | cut -d ':' -f 2| sed -e 's/^[ \t]*//')","
+    story=$(< $filename awk -v nth=$i  '/^\*\*\* START OF THE PROJECT GUTENBERG/,/^\*\*\* END OF THE PROJECT GUTENBERG/{if(++m==1)n++;if(n==nth)print; if(/^\*\*\* END OF THE PROJECT GUTENBERG/)m=0}' | tr -d '\r'  | sed '1d; $d' | sed "s/\"/\"\"/g" )
+    printf '%s' "$story" | grep -v "^$" | awk '{print tolower($0)}' | tr -cs 'a-zA-Z' '\n' | sed "s|^|${bookid}|" >> tokens.csv
+    printf '%s%s%s%s\"%s\n"\n' "$title" "$author" "$release_date" "$bookid" "$language" "$story" >> ebook.csv
+    i=$((i + 1))
+    echo "Processing $i - $bookid"
 done
+#done
+echo "DONE"
 cat tokens.csv | cut -d ',' -f2| grep -v "^\s*$" | sort | uniq -c | sort -bnr >> token_counts.csv
-grep -w -i -f popular_names.txt token_counts.csv | awk '{ for (i=NF; i>1; i--) printf("%s ",$i); print $1; }' | sed 's/\>/,/g;s/,$//' >> names.csv
-sort ebook-sorted.csv -o ebook-sorted.csv
+echo "DONE token_counts"
+grep -w -i -f popular_names.txt token_counts.csv | awk '{ for (i=NF; i>1; i--) printf("%s,",$i); print $1; }' >> name_counts.csv
+#sed '/^$/d' unsorted_ebook-sorted.csv > unsorted_ebook-sorted.csv.tmp
+#rm ebook-sorted.csv
+#sort -n unsorted_ebook-sorted.csv.tmp  > ebook-sorted.csv
+echo "DONE"
 exit 0
